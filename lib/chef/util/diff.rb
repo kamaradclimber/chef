@@ -22,25 +22,22 @@ class Chef
     class Diff
       include Chef::Mixin::ShellOut
 
-      def initialize(old_file, new_file)
-        @suppress_resource_reporting = false
-        diff(old_file, new_file)
-      end
-
-      def to_a
-        @error ? [ @error ] : @diff
+      def for_output
+        # formatted output to a terminal uses arrays of strings and returns error strings
+        @diff.nil? ? [ @error ] : @diff
       end
 
       def for_reporting
-        # WARNING: caller needs to ensure that new files aren't posted to resource reporting
+        # caller needs to ensure that new files aren't posted to resource reporting
         return nil if @diff.nil?
         @diff.join("\\n")
       end
 
       def diff(old_file, new_file)
-        # these are internal errors that should never get raised
-        raise "old file #{source} does not exist to diff against" unless File.exists?(old_file)
-        raise "new file #{dest} does not exist to diff against" unless File.exists?(new_file)
+        # indicates calling code bug: caller is reponsible for making certain both
+        # files exist
+        raise "old file #{old_file} does not exist" unless File.exists?(old_file)
+        raise "new file #{new_file} does not exist" unless File.exists?(new_file)
         @error = catch (:nodiff) do
           do_diff(old_file, new_file)
         end
@@ -49,7 +46,9 @@ class Chef
       private
 
       def do_diff(old_file, new_file)
-        throw :nodiff, "(diff output suppressed by config)" if Chef::Config[:diff_disabled]
+        if Chef::Config[:diff_disabled]
+          throw :nodiff, "(diff output suppressed by config)"
+        end
 
         diff_filesize_threshold = Chef::Config[:diff_filesize_threshold]
         diff_output_threshold = Chef::Config[:diff_output_threshold]
@@ -64,7 +63,7 @@ class Chef
 
         begin
           # -u: Unified diff format
-          result = shell_out("diff -u #{old_file} #{new_file}" )
+          result = shell_out("diff -u #{old_file} #{new_file}")
         rescue Exception => e
           # Should *not* receive this, but in some circumstances it seems that
           # an exception can be thrown even using shell_out instead of shell_out!
@@ -78,9 +77,10 @@ class Chef
           if result.stdout.length > diff_output_threshold
             throw :nodiff, "(long diff of over #{diff_output_threshold} characters, diff output suppressed)"
           else
-            # XXX: we return the diff here, everything else is an error of one form or another
             @diff = result.stdout.split("\n")
             @diff.delete("\\ No newline at end of file")
+            # XXX: successful return of the diff is here, we return nil as no error...  ugh...
+            return nil
           end
         elsif not result.stderr.empty?
           throw :nodiff, "Could not determine diff. Error: #{result.stderr}"
@@ -91,7 +91,6 @@ class Chef
 
       def is_binary?(path)
         ::File.open(path) do |file|
-
           buff = file.read(Chef::Config[:diff_filesize_threshold])
           buff = "" if buff.nil?
           return buff !~ /^[\r[:print:]]*$/

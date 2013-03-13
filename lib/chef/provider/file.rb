@@ -115,10 +115,11 @@ class Chef
           raise "chef-client is confused, trying to deploy a file that has no path or does not exist..."
         end
         if contents_changed?
-          diff = Chef::Util::Diff.new(@current_resource.path, tempfile.path)
+          diff = Chef::Util::Diff.new
+          diff.diff(@current_resource.path, tempfile.path)
           @new_resource.diff( diff.for_reporting ) unless file_created?
           description = [ "update content in file #{@new_resource.path} from #{short_cksum(@current_resource.checksum)} to #{short_cksum(checksum(tempfile.path))}" ]
-          description << diff.to_s
+          description << diff.for_output
           converge_by(description) do
             backup unless file_created?
             @deployment_strategy.deploy(tempfile.path, @new_resource.path)
@@ -211,6 +212,23 @@ class Chef
 
         acl_scanner = ScanAccessControl.new(@new_resource, resource)
         acl_scanner.set_all!
+      end
+
+      # deprecated methods to support
+
+      def set_content
+      end
+
+      def compare_content
+      end
+
+      def diff_current
+      end
+
+      def diff_current_from_content
+      end
+
+      def is_binary?(path)
       end
 
     end
