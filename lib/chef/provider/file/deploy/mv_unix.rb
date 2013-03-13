@@ -17,7 +17,11 @@
 #
 
 #
-# PURPOSE: this strategy is atomic and preserves modes, but will not restore SELinux contexts
+# PURPOSE: this strategy is atomic, does not mutate file modes, and supports selinux
+#
+# Note the FileUtils.mv does not have a preserve flag, and the preserve behavior of it is different
+# on different rubies (1.8.7 vs 1.9.x) so we are explicit about making certain the tempfile metadata
+# is not deployed (technically implementing preserve = false ourselves).
 #
 
 class Chef
@@ -31,27 +35,21 @@ class Chef
           end
 
           def deploy(src, dst)
-            if ::File.dirname(src) != ::File.dirname(dst)
-              # internal warning for now - in a Windows/SElinux/ACLs world its better to write
-              # a tempfile to your destination directory and then rename it
-              Chef::Log.debug("WARNING: moving tempfile across different directories -- this may break permissions")
-            end
-
             # we are only responsible for content so restore the dst files perms
+            Chef::Log.debug("reading modes from #{dst} file")
             mode = ::File.stat(dst).mode & 07777
             uid  = ::File.stat(dst).uid
             gid  = ::File.stat(dst).gid
-            Chef::Log.debug("saved mode = #{mode.to_s(8)}, uid = #{uid}, gid = #{gid} from #{dst}")
+            Chef::Log.debug("applying mode = #{mode.to_s(8)}, uid = #{uid}, gid = #{gid} to #{src}")
+            ::File.chmod(mode, src)
+            ::File.chown(uid, gid, src)
             Chef::Log.debug("moving temporary file #{src} into place at #{dst}")
             FileUtils.mv(src, dst)
-            ::File.chmod(mode, dst)
-            ::File.chown(uid, gid, dst)
-            Chef::Log.debug("restored mode = #{mode.to_s(8)}, uid = #{uid}, gid = #{gid} to #{dst}")
 
             # handle selinux if we need to run restorecon
             if Chef::Config[:selinux_enabled]
+              Chef::Log.debug("selinux is enabled, fixing selinux permissions")
               cmd = "#{Chef::Config[:selinux_restorecon_comand]} #{dst}"
-              Chef::Log.debug("fixing selinux perms with: #{cmd}")
               shell_out!(cmd)
             end
           end
